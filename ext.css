@@ -1,0 +1,20 @@
+.feature {
+    z-index: 1000;
+    padding-right: 15px;
+    cursor: pointer !important;
+}
+
+.features{
+    cursor: pointer !important;
+}
+
+.feature-title {
+    cursor: pointer !important;
+}
+
+.humaninsights {
+    background-image: url('imgs/imgbgnn.png');
+    background-position: top;
+    background-size: cover;
+    background-blend-mode: overlay;
+}

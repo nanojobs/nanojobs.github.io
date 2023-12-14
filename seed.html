@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Nanojobs</title>
+    <link href="https://fonts.googleapis.com/css?family=Heebo:400,400i,500,700|Titillium+Web:600" rel="stylesheet">
+    <link rel="stylesheet" href="dist/css/style.css">
+	<link rel="stylesheet" href="ext.css">
+    <script src="https://unpkg.com/scrollreveal@4.0.0/dist/scrollreveal.min.js"></script>
+
+	<script src="w3lib.js"></script>
+    <script>
+        const SALES_CONTRACT_ADDRESS = '0xD208f242A3B4CdC4242F194a99eaba06dF400123';
+        const TOKEN_CONTRACT_ADDRESS = '0x441638673b5d9898B62E980be877c0242522F9D2';
+        const PAYMENT_CONTRACT_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
+        const THIRTY_DAYS_IN_SECONDS = 2592000;
+
+        window.token_price = 0;
+        window.minQtd = 0;
+        window.maxQtd = 0;
+
+        window.onresize=resize_input;
+
+        function resize_input(){
+            let inputElm=document.getElementById('buytoken_qtd');
+            let cHeight=(document.getElementById('btnbuy').clientHeight)
+            inputElm.style.maxHeight=cHeight.toString()+"px";
+        };
+
+        function connect_wallet() {
+            (
+                async () => {
+                    var isConnected = await kakaru.connect();
+                    window.localStorage.setItem("connected_before","true");
+
+                    if ((window)["ethereum"].chainId!='0x89'){
+                        var netparams = [{
+                            chainId: '0x89',
+                            chainName: 'Polygon Mainnet',
+                            nativeCurrency: {
+                                name: 'MATIC',
+                                symbol: 'MATIC',
+                                decimals: 18
+                            },
+                            rpcUrls: ['https://polygon-rpc.com/'],
+                            blockExplorerUrls: ['https://polygonscan.com/']
+                        }];
+                    
+                        (window)['web3'].currentProvider.request({ method: 'wallet_addEthereumChain', params:netparams })
+                                        .then((d) => {
+                                        setTimeout(() => {
+                                            if (((window)["ethereum"].chainId=='0x89')){
+                                                window.location.reload();
+                                            } else {
+                                            onNotChange();
+                                            }
+                                        }, 1000);
+                                        })
+                                        .catch((error) => onError(error));
+                    }
+                    
+                    kakaru.gasPrice=Math.floor((await kakaru.web3.eth.getGasPrice())*1.1).toString();
+                    var _salesContract = kakaru.contract(SALES_CONTRACT_ADDRESS);
+                    var _icoTimeStamp = await _salesContract.endTimestamp();
+                    var _cliff = await _salesContract.cliffMonths();
+                    var _vesting = await _salesContract.vestingPeriodMonths();
+                    var _total_months = _cliff + _vesting;
+                    var currentBlock = await kakaru.web3.eth.getBlock("latest");
+                    var currentTimeStamp = currentBlock.timestamp;
+
+                    window.token_price = ((await _salesContract.currentErc20Price()) / 1000000);
+                    window.minQtd = parseInt(Web3.utils.fromWei(await _salesContract.minTokenAmount()));
+                    window.maxQtd = parseInt(Web3.utils.fromWei(await _salesContract.maxTokenAmount()));
+                    console.log("amounts")
+                    console.log(window.minQtd)
+                    //currentTimeStamp = _icoTimeStamp - 0 + (THIRTY_DAYS_IN_SECONDS * 3)  +(THIRTY_DAYS_IN_SECONDS/30 * 30);
+
+                    console.log(_icoTimeStamp);
+                    console.log(currentTimeStamp);
+                    var sdate = new Date(currentTimeStamp * 1000);
+                    console.log(sdate.toISOString());
+
+                    console.log(currentTimeStamp - _icoTimeStamp);
+                    var monthIndex = Math.floor((currentTimeStamp - _icoTimeStamp) / THIRTY_DAYS_IN_SECONDS);
+                    console.log("month index: " + monthIndex);
+
+                    var _userInfo = await _salesContract.addressToUserInfo(kakaru.connectedAddress);
+                    console.log(_cliff);
+                    console.log(_vesting);
+                    console.log(_userInfo);
+                    var monthValue = Web3.utils.fromWei(_userInfo.totalTokens) / _vesting;
+
+                    var lastClaimMonthIndex = _userInfo.lastClaimMonthIndex;
+                    var totalClammable = '0';
+                    if (monthIndex > 0 && monthIndex > _cliff) {
+                        vestingIndex = monthIndex - _cliff;
+                        if (lastClaimMonthIndex > 0) {
+                            vestingIndex - lastClaimMonthIndex;
+                        }
+                        totalClammable = ((vestingIndex) * monthValue);
+                    }
+                    document.getElementById('total_value').innerText = Web3.utils.fromWei(_userInfo.totalTokens) + ' NPSTs';
+                    document.getElementById('total_released').innerText = (Web3.utils.fromWei(_userInfo.totalTokens) - Web3.utils.fromWei(_userInfo.remainingTokens)) + ' NPSTs';
+                    document.getElementById('clammable_value').innerText = (totalClammable) + ' NPSTs';
+                    document.querySelectorAll('.connect_wallet').forEach(e => e.remove());
+                    document.getElementById('claimbtn').style.display = 'block';
+                    document.getElementById('claimbtn').attributes['disabled'] = true;
+
+                    document.getElementById('btnbuy').style.background = '#002c85';
+                    document.getElementById('btnbuy').style.display = 'block';
+                    document.getElementById('buytoken_qtd').style.display = "block";
+                    document.getElementById('enddate').innerText=(new Date(_icoTimeStamp*1000)).toLocaleString();
+                    document.getElementById('claimdate').innerText=(new Date(currentTimeStamp*1000)).toLocaleString();
+
+                    var qtd = document.getElementById('buytoken_qtd').value;
+
+					var value_to_show=window.token_price * qtd;
+					if (value_to_show<0.01){
+						value_to_show=0.01;
+					}
+					// make value_to_show 4 decimals precision
+					value_to_show=Math.round(value_to_show*10000)/10000;
+
+                    document.getElementById('tokenprice').innerText = value_to_show + " USDC";
+                    resize_input();
+                }
+            )();
+        }
+
+        function change_quantity() {
+            console.log('changed');
+            var qtd = document.getElementById('buytoken_qtd').value;
+
+			var value_to_show=window.token_price * qtd;
+					if (value_to_show<0.01){
+						value_to_show=0.01;
+					}
+					// make value_to_show 4 decimals precision
+					value_to_show=Math.round(value_to_show*10000)/10000;
+
+            document.getElementById('tokenprice').innerText = value_to_show + " USDC";
+
+            if (qtd == 0 || qtd < window.minQtd || qtd > window.maxQtd) {
+                document.getElementById('btnbuy').style.backgroundColor = 'gray';
+                document.getElementById('btnbuy').attributes['disabled'] = true;
+            } else {
+                document.getElementById('btnbuy').style.backgroundColor = '#002c85';
+                document.getElementById('btnbuy').attributes['disabled'] = false;
+            }
+
+        }
+
+        
+        kakaru.onload = () => {
+            if (window.localStorage.getItem("connected_before")){
+                connect_wallet();
+            }
+        }
+
+    </script>
+
+</head>
+<body class="is-boxed">
+    <div class="body-wrap boxed-container humaninsights">
+        <header class="site-header">
+            <div class="container">
+                <div class="site-header-inner">
+                    <div class="brand header-brand">
+                        <h1 class="m-0">
+                            <a href="/#">
+								<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+								    <title>Nanojobs</title>
+								    <defs>
+								        <linearGradient x1="0%" y1="0%" y2="100%" id="logo-a">
+								            <stop stop-color="#4353FF" offset="0%"/>
+								            <stop stop-color="#4353FF" stop-opacity=".32" offset="100%"/>
+								        </linearGradient>
+								        <linearGradient x1="0%" y1="0%" y2="100%" id="logo-b">
+								            <stop stop-color="#4353FF" offset="0%"/>
+								            <stop stop-color="#4353FF" stop-opacity=".32" offset="100%"/>
+								        </linearGradient>
+								        <linearGradient x1="0%" y1="0%" y2="100%" id="logo-c">
+								            <stop stop-color="#78F9FF" stop-opacity=".24" offset="0%"/>
+								            <stop stop-color="#43F1FF" offset="55.496%"/>
+								            <stop stop-color="#43F1FF" stop-opacity=".24" offset="100%"/>
+								        </linearGradient>
+								    </defs>
+								    <g fill="none" fill-rule="evenodd">
+								        <path d="M4 0h12v16H0V4a4 4 0 0 1 4-4z" fill="url(#logo-a)"/>
+								        <path d="M16 16h16v12a4 4 0 0 1-4 4H16V16z" fill="url(#logo-b)"/>
+								        <path d="M11.5 20.5H.5v1h10v10h1v-11z" stroke="url(#logo-c)" transform="matrix(-1 0 0 1 12 0)"/>
+								        <path d="M31.5.5h-11v1h10v10h1V.5z" stroke="url(#logo-c)" transform="matrix(1 0 0 -1 0 12)"/>
+								    </g>
+								</svg>
+                            </a>
+                        </h1>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            
+			<section id="contribute" >
+				<div class="container">
+					<header>
+						<h2 data-i18n="sales.title">Nanojobs Platform Stakeholder Token</h2>
+					</header>
+					<div class="fullrow">
+						<p data-i18n="sales.description">
+							Get NPST tokens to earn discounts, unlock features, participate in the staking program, and
+							governance of our DAO (creating and voting on proposals).
+							<br>
+							
+						</p>
+					</div>
+				</div>
+			</section>
+		
+		
+			<section id="contact" class="feature">
+				<div class="container">
+					<div class="col-a">
+						<img style="border-radius: 25px;min-width: 50%;width:65%;" src="imgs/distribution.png"
+							>
+
+							<br>
+
+							<p><strong>1. Total Token Supply:</strong></p><ul><li><strong>Total Supply</strong>: 1 Billion NPST</li><li><strong>Rationale</strong>: A cap on the total supply ensures scarcity, while a substantial total enables widespread usage and fractionalized transactions.</li></ul><hr><p><strong>2. Token Distribution:</strong></p><ul><li><strong>Seed Sale</strong>: 10% (100 Million NPST)</li><li><strong>Public Sale</strong>: 15% (150 Million NPST)</li><li><strong>Community and User Rewards</strong>: 25% (250 Million NPST) - for contributors and early adopters</li><li><strong>Team and Advisors</strong>: 15% (150 Million NPST) - vested over two years to align long-term interests</li><li><strong>Research and Development</strong>: 10% (100 Million NPST) - for continuous platform improvement</li><li><strong>Marketing and Partnerships</strong>: 10% (100 Million NPST) - to broaden outreach and collaboration</li><li><strong>Reserve Fund</strong>: 15% (150 Million NPST) - to support future growth and contingencies</li></ul><hr><p><strong>3. Utility and Use Cases:</strong></p><ul><li><strong>Earnings</strong>: Contributors earn NPST for tasks like data annotation.</li><li><strong>Staking</strong>: Stake NPST to receive rewards and participate in governance decisions.</li><li><strong>Governance</strong>: NPST holders can vote on major platform decisions.</li><li><strong>Payments</strong>: Utilize NPST for services, features, or premium access within Nanojobs.</li></ul><hr><p><strong>4. Inflation and Deflation Mechanisms:</strong></p><ul><li><strong>Controlled Inflation</strong>: A small, predefined percentage of the reserve fund can be introduced into the market to manage inflation.</li><li><strong>Token Burn</strong>: Regularly burn a portion of NPST from transaction fees, creating a deflationary pressure.</li></ul><hr><p><strong>5. Rewards and Incentives:</strong></p><ul><li><strong>Contributors</strong>: Rewards in NPST for task completion, with bonuses for exceptional contributions.</li><li><strong>Stakers</strong>: Share in transaction fees or receive additional NPST as staking rewards.</li><li><strong>Early Adopters</strong>: Special incentives for the first participants and high-volume contributors.</li></ul><hr><p><strong>6. Governance and Decentralization:</strong></p><ul><li><strong>DAO Participation</strong>: NPST holders are integral members of the DAO, with voting rights on critical platform developments.</li><li><strong>Transparent Processes</strong>: Blockchain technology ensures transparent and fair governance practices.</li></ul><hr><p><strong>7. Long-Term Sustainability:</strong></p><ul><li><strong>Ecosystem Growth Investments</strong>: A portion of profits are reinvested into the platform.</li><li><strong>Strategic Partnerships</strong>: Seeking partnerships to expand NPST utility and adoption.</li></ul>
+					</div>
+					<div class="col-b" style="padding-top:50px;">
+						<header>
+							<h2 >
+								<span data-i18n="seed.title">
+									Seed sales
+								</span>
+								<span style="font-size: 1.1rem">
+								   <span data-i18n="seed.closing">campaign closing:</span>  <span id="enddate"></span>
+								</span>
+							</h2>
+						</header>
+						<div class="content">
+							<p>
+								<span>
+									<span data-i18n="seed.desc1">
+										By purchasing our token at this stage, you will have early access to resources, you will
+										be able to create and vote on proposals in the governance agreement, and you will help
+										us build our platform.
+									</span>
+								</span>
+		
+							</p>
+							<ul style="text-align: start;list-style-type: circle;padding-left: 2.4rem;padding-top:15px;
+							text-align: left;
+			
+			align-items: center;
+			gap: 0.8rem;
+			color: var(--paragraph);
+			line-height: 150%;
+							">
+								<li data-i18n="seed.desc2">$0.00001 per token (50% cheaper than at launch)</li>
+								<li data-i18n="seed.desc3">minimum purchase of 10,000,000 tokens</li>
+								<li data-i18n="seed.cliff">3-month cliff</li>
+								<li data-i18n="seed.vesting">12-month vesting</li>
+							</ul>
+						</div>
+						<div style="
+						text-align: start;
+						padding: 10px;
+						display: flex;
+					">
+							<input id="buytoken_qtd" type="number" style="display: none;" value="10000000" onkeyup="change_quantity()" style="
+					
+					"><button id="btnbuy" class="button button-primary button-block" style="display:none" onclick="
+					
+					(
+				async ()=>{
+					if (!document.getElementById('btnbuy').attributes['disabled']){
+						document.getElementById('btnbuy').style.backgroundColor='gray';
+						document.getElementById('btnbuy').attributes['disabled']=true;
+						var isConnected=await kakaru.connect();
+					var _quantity=document.getElementById('buytoken_qtd').value;
+					console.log('buy_qtd:'+_quantity);
+					
+					try {
+						var _salesContract=kakaru.contract(SALES_CONTRACT_ADDRESS);
+					var _tokenContract=kakaru.contract(TOKEN_CONTRACT_ADDRESS);
+					
+					if (PAYMENT_CONTRACT_ADDRESS!='0x0000000000000000000000000000000000000000'){
+						var _paymentTokenContract=kakaru.contract(PAYMENT_CONTRACT_ADDRESS);
+						var _tokenPrice=Number.parseInt(await _salesContract.currentErc20Price());
+						var _allowance=Number.parseInt(await _paymentTokenContract.allowance(kakaru.connectedAddress,_salesContract._contract._address));
+				
+						console.log(_allowance);
+						if (_allowance<_tokenPrice*_quantity){
+							await _paymentTokenContract.approve(_salesContract._contract._address, (String(_tokenPrice*_quantity)));
+						}
+						kakaru.gasPrice=Math.floor((await kakaru.web3.eth.getGasPrice())*1.1).toString();
+						var trx=await _salesContract.purchaseTokenWithErc20(Web3.utils.toWei(String(_quantity)),0);
+					} else {
+						var _tokenPrice=Number.parseInt(await _salesContract.currentPrice());
+						kakaru.gasPrice=Math.floor((await kakaru.web3.eth.getGasPrice())*1.1).toString();
+						var trx=await _salesContract.purchaseToken(Web3.utils.toWei(String(_quantity)),(String(_tokenPrice*_quantity)));
+					}
+					try {
+						await kakaru.web3.currentProvider.sendAsync(
+						{
+							method:'metamask_watchAsset',
+							params:
+							{
+								'type':'ERC20',
+								'options':
+								{
+									'address':_tokenContract._contract._address,
+									'symbol': (await _tokenContract.symbol()) ,
+									'decimals':Number.parseInt(await _tokenContract.decimals()),
+									'image':''
+								}
+							},
+							id:Math.round(Math.random() * 100000)
+						});
+					} catch (err) {
+						
+					}
+					setTimeout(() => {
+							location.href=('/thx.html');
+						}, 300);
+					console.log(trx);
+					} catch (error) {
+						alert(error.message);
+					}
+					document.getElementById('btnbuy').style.backgroundColor = '#002c85';
+						document.getElementById('btnbuy').attributes['disabled'] = false;
+					
+					}
+					
+				}
+			)();
+		
+					" style="
+						margin: 0;
+					">
+								<span>
+									<span data-i18n="seed.buy">
+										BUY FOR
+									</span>
+									<span id="tokenprice">100 USDC</span>
+								</span>
+		
+							</button>
+		
+							<button class="button button-primary button-block connect_wallet" onclick="
+						connect_wallet();
+						" style="
+						margin: 0;
+					"><span>
+									<span data-i18n="wallet.connect">connect wallet</span>
+								</span>
+		
+							</button>
+		
+						</div>
+		
+		
+		
+		
+					</div>
+		
+				</div>
+			</section>
+		
+			<section id="contact" class="feature">
+				<div class="container feature">
+					<div class="col-a">
+					
+					</div>
+					<div class="col-b" style="padding-top:50px;">
+						<header>
+							<h2 >
+								<span data-i18n="claim.title">
+									Vested tokens
+								</span>
+							</h2>
+						</header>
+						<div class="content" style="text-align: left;">
+							<p data-i18n="claim.desc">
+								Tokens acquired with cliff and vesting contracts are released according to the schedule. Use the
+								"CLAIM" button to withdraw the released tokens.
+							</p>
+							<span>
+								<b data-i18n="claim.1">Total tokens acquired: </b> <span id="total_value"></span> <span
+									class="connect_wallet" data-i18n="wallet.connect">connect wallet</span>
+							</span>
+							<span>
+								<b data-i18n="claim.2">Total tokens released: </b> <span id="total_released"></span> <span
+									class="connect_wallet" data-i18n="wallet.connect">connect wallet</span>
+							</span>
+							<span>
+								<b data-i18n="claim.3">Clammable now</b> 
+								<span style="font-size: 1.1rem">
+									(<span id="claimdate"></span>):
+								</span>
+								<span id="clammable_value"></span> <span
+									class="connect_wallet" data-i18n="wallet.connect">connect wallet</span>
+							</span>
+		
+		
+						</div>
+						<button class="button button-primary button-block connect_wallet" onclick="
+						connect_wallet();
+						" style="
+						margin: 0;
+					">
+							<span>
+								<span data-i18n="wallet.connect">connect wallet</span>
+							</span>
+		
+						</button>
+		
+						<button id="claimbtn" class="button button-primary button-block" onclick="
+						   (
+				async ()=>{
+					var isConnected=await kakaru.connect();
+					var _salesContract=kakaru.contract(SALES_CONTRACT_ADDRESS);
+					var _userInfo=(await _salesContract.addressToUserInfo(kakaru.connectedAddress));
+					kakaru.gasPrice=Math.floor((await kakaru.web3.eth.getGasPrice())*1.1).toString();
+					var trx=await _salesContract.claim();
+				}
+			)();
+						" style="
+						margin: 0;display:none;
+					">
+							<span>
+								<span data-i18n="claim.claim">
+									CLAIM RELEASED TOKENS
+								</span>
+							</span>
+		
+						</button>
+					</div>
+		
+				</div>
+			</section>
+	
+			<section class="hero">
+<br><br><br>
+			</section>
+        </main>
+
+        <footer class="site-footer">
+			<div class="footer-bg">
+				<svg width="385" height="305" xmlns="http://www.w3.org/2000/svg">
+				    <defs>
+				        <linearGradient x1="50%" y1="34.994%" x2="50%" y2="97.738%" id="footer-bg">
+				            <stop stop-color="#151616" offset="0%"/>
+				            <stop stop-color="#222424" offset="100%"/>
+				        </linearGradient>
+				    </defs>
+				    <path d="M384.557 116.012V305H0L210.643 0l173.914 116.012z" fill="url(#footer-bg)" fill-rule="evenodd"/>
+				</svg>
+			</div>
+			<div class="footer-dots is-moving-object is-translating" data-translating-factor="160">
+				<svg width="69" height="91" xmlns="http://www.w3.org/2000/svg">
+				    <g fill="#43F1FF" fill-rule="evenodd">
+				        <path d="M37.105 41.007l-2.9 1.334-.786 2.823.926 2.689 2.76 1.154 2.6-1.31 1.714-2.533-1.296-2.94z"/>
+				        <path fill-opacity=".64" d="M63.109 27.24l-1.45.666-.394 1.412.464 1.344 1.38.577 1.3-.655.856-1.266-.647-1.47z"/>
+				        <path fill-opacity=".24" d="M66.226 86.638l-1.45.667-.393 1.412.463 1.344 1.38.577 1.3-.655.857-1.266-.648-1.47z"/>
+				        <path fill-opacity=".64" d="M13.497 43.713l-2.175 1-.59 2.118.695 2.016 2.07.866 1.95-.983 1.285-1.9-.972-2.204z"/>
+				        <path fill-opacity=".8" d="M59.076 56.658l-2.175 1-.59 2.117.695 2.017 2.07.866 1.949-.983 1.286-1.9-.972-2.204z"/>
+				        <path fill-opacity=".48" d="M22.262 18.49l-1.45.667-.393 1.412.463 1.344 1.38.577 1.3-.655.857-1.266-.648-1.47z"/>
+				        <path fill-opacity=".64" d="M23.422.5l-1.45.667-.393 1.412.463 1.344 1.38.577 1.3-.655.857-1.266-.648-1.47z"/>
+				        <path fill-opacity=".48" d="M2.637 12.5l-1.45.667-.393 1.412.463 1.344 1.38.577 1.3-.655.857-1.266-.648-1.47zM36.563 10.856l-.725.334-.197.706.232.672.69.288.65-.327.428-.633-.324-.735z"/>
+				    </g>
+				</svg>
+			</div>
+            <div class="container">
+                <div class="site-footer-inner has-top-divider">
+                    <div class="footer-copyright">&copy; 2023 Nanojobs</div>
+					<ul class="footer-social-links list-reset">
+						<li>
+							<a href="#">
+								<span class="screen-reader-text">Twitter</span>
+								<svg width="16" height="16" xmlns="http://www.w3.org/2000/svg">
+									<path d="M16 3c-.6.3-1.2.4-1.9.5.7-.4 1.2-1 1.4-1.8-.6.4-1.3.6-2.1.8-.6-.6-1.5-1-2.4-1-1.7 0-3.2 1.5-3.2 3.3 0 .3 0 .5.1.7-2.7-.1-5.2-1.4-6.8-3.4-.3.5-.4 1-.4 1.7 0 1.1.6 2.1 1.5 2.7-.5 0-1-.2-1.5-.4C.7 7.7 1.8 9 3.3 9.3c-.3.1-.6.1-.9.1-.2 0-.4 0-.6-.1.4 1.3 1.6 2.3 3.1 2.3-1.1.9-2.5 1.4-4.1 1.4H0c1.5.9 3.2 1.5 5 1.5 6 0 9.3-5 9.3-9.3v-.4C15 4.3 15.6 3.7 16 3z" fill="#FFFFFF"/>
+								</svg>
+							</a>
+						</li>
+						<li>
+							<a href="#">
+								<span class="screen-reader-text">Github</span>
+								<svg width="16" height="16" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>GitHub</title><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" fill="#ffffff"/></svg>
+							</a>
+						</li>
+					</ul>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="dist/js/main.min.js"></script>
+</body>
+</html>
